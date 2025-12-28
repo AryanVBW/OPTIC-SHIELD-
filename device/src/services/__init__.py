@@ -4,6 +4,9 @@ from .detection_service import DetectionService, DetectionEvent, ServiceState
 from .alert_service import AlertService
 from .upload_service import UploadService, UploadResult
 from .event_logger import EventLogger, EventType, DetectionEventLog
+from .delivery_service import GuaranteedDeliveryService, DeliveryResult, DeliveryStatus, DeliveryMetrics
+from .location_service import LocationService, LocationData, GPSReader
+from .health_monitor import HealthMonitor, HealthCheck, HealthStatus, MetricsCollector, SelfHealer, Alert
 
 __all__ = [
     'DetectionService',
@@ -14,5 +17,18 @@ __all__ = [
     'UploadResult',
     'EventLogger',
     'EventType',
-    'DetectionEventLog'
+    'DetectionEventLog',
+    'GuaranteedDeliveryService',
+    'DeliveryResult',
+    'DeliveryStatus',
+    'DeliveryMetrics',
+    'LocationService',
+    'LocationData',
+    'GPSReader',
+    'HealthMonitor',
+    'HealthCheck',
+    'HealthStatus',
+    'MetricsCollector',
+    'SelfHealer',
+    'Alert'
 ]

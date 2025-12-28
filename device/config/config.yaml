@@ -8,11 +8,11 @@ environment: development
 # Device identification
 device:
   id: ""  # Auto-generated if empty
-  name: "optic-shield-001"
+  name: "MAC_BOOK"
   location:
-    name: "Unknown Location"
-    latitude: 0.0
-    longitude: 0.0
+    name: "kawathe(yemai)"
+    latitude: 19.2122
+    longitude: 72.9222
 
 # Detection settings
 detection:
@@ -105,6 +105,78 @@ dashboard:
   
   # Offline queue
   offline_queue_max_size: 1000
+
+# Guaranteed Delivery Settings (Production-grade message broker)
+delivery:
+  enabled: true
+  
+  # Delivery interval in seconds
+  interval_seconds: 5
+  
+  # Batch size for processing
+  batch_size: 10
+  
+  # Maximum queue size before eviction
+  max_queue_size: 50000
+  
+  # Maximum in-flight messages
+  max_in_flight: 100
+  
+  # Visibility timeout for in-flight messages (seconds)
+  visibility_timeout_seconds: 300
+  
+  # Retry settings
+  max_retry_attempts: 10
+  retry_backoff_base_seconds: 30
+  retry_backoff_max_seconds: 3600
+  
+  # Message TTL (7 days default)
+  message_ttl_seconds: 604800
+  
+  # Circuit breaker settings
+  circuit_breaker:
+    failure_threshold: 5
+    recovery_timeout_seconds: 60
+    half_open_max_calls: 3
+  
+  # Deduplication
+  enable_deduplication: true
+  dedup_window_seconds: 300
+
+# Location/GPS Settings
+location:
+  # GPS serial port (leave empty to disable GPS)
+  gps_port: ""
+  gps_baudrate: 9600
+  
+  # Update interval for GPS readings
+  update_interval_seconds: 10
+  
+  # Cache location to file for persistence
+  cache_enabled: true
+
+# Health Monitoring
+health:
+  enabled: true
+  
+  # Health check interval
+  check_interval_seconds: 30
+  
+  # Alert cooldown to prevent spam
+  alert_cooldown_seconds: 300
+  
+  # Self-healing settings
+  self_healing_enabled: true
+  
+  # Resource thresholds
+  cpu_warning_percent: 80
+  cpu_critical_percent: 95
+  memory_warning_percent: 80
+  memory_critical_percent: 95
+  disk_warning_percent: 80
+  disk_critical_percent: 95
+  temperature_warning_celsius: 70
+  temperature_critical_celsius: 85
 
 # System settings
 system:

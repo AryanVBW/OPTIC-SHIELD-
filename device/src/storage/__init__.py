@@ -3,6 +3,7 @@
 from .database import DetectionDatabase, DetectionRecord
 from .image_store import ImageStore
 from .offline_queue import OfflineQueue, DetectionEventPayload, QueueItemStatus
+from .message_broker import MessageBroker, Message, MessageStatus, MessagePriority, CircuitBreaker
 
 __all__ = [
     'DetectionDatabase',
@@ -10,5 +11,10 @@ __all__ = [
     'ImageStore',
     'OfflineQueue',
     'DetectionEventPayload',
-    'QueueItemStatus'
+    'QueueItemStatus',
+    'MessageBroker',
+    'Message',
+    'MessageStatus',
+    'MessagePriority',
+    'CircuitBreaker'
 ]

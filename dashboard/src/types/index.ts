@@ -72,6 +72,9 @@ export interface Detection {
     frameTimestamp?: number
     deviceInfo?: Record<string, any>
     uploadTimestamp?: number
+    ackId?: string
+    receivedAt?: string
+    messageChecksum?: string
   }
 }
 
@@ -161,5 +164,8 @@ export interface DetectionPayload {
     frame_timestamp?: number
     device_info?: Record<string, any>
     upload_timestamp?: number
+    message_checksum?: string
+    delivery_timestamp?: number
+    attempt?: number
   }
 }

@@ -1,0 +1,47 @@
+# OPTIC-SHIELD Development Configuration
+# Overrides base config.yaml for development environment
+
+environment: development
+
+device:
+  name: "optic-shield-dev"
+
+detection:
+  model:
+    confidence_threshold: 0.3
+  use_ncnn: false
+
+camera:
+  enabled: false
+
+storage:
+  database:
+    path: "data/dev_detections.db"
+  images:
+    path: "data/dev_images"
+  logs:
+    path: "data/dev_logs"
+    retention_days: 7
+
+alerts:
+  enabled: true
+  remote:
+    enabled: true
+    include_image: true
+    image_max_size_kb: 200
+
+dashboard:
+  api_url: "http://localhost:3000/api"
+  api_key: "WgEohQdkBSQOq8zmyaCqlyIdXdpeuUKkHFGAJLkr2Fk"
+  websocket_url: "ws://localhost:3000/ws"
+  offline_queue_max_size: 100
+
+upload:
+  enabled: true
+  batch_size: 5
+  upload_interval_seconds: 10
+  max_image_size_kb: 200
+
+logging:
+  level: "DEBUG"
+  console: true

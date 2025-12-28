@@ -20,6 +20,9 @@ from src.services.detection_service import DetectionService, ServiceState
 from src.services.alert_service import AlertService
 from src.services.upload_service import UploadService
 from src.services.event_logger import EventLogger
+from src.services.delivery_service import GuaranteedDeliveryService
+from src.services.location_service import LocationService
+from src.services.health_monitor import HealthMonitor, HealthStatus, HealthCheck
 from src.storage.offline_queue import OfflineQueue
 from src.api.dashboard_client import DashboardClient
 from src.utils.logging_setup import setup_logging
@@ -44,6 +47,9 @@ class OpticShield:
         self.event_logger: EventLogger = None
         self.offline_queue: OfflineQueue = None
         self.system_monitor: SystemMonitor = None
+        self.delivery_service: GuaranteedDeliveryService = None
+        self.location_service: LocationService = None
+        self.health_monitor: HealthMonitor = None
         self._restart_count = 0
     
     def initialize(self) -> bool:
@@ -82,6 +88,23 @@ class OpticShield:
             )
             self.offline_queue.initialize()
             
+            # Initialize location service for GPS/location tracking
+            self.location_service = LocationService(
+                default_latitude=self.config.device.latitude,
+                default_longitude=self.config.device.longitude,
+                default_location_name=self.config.device.location_name,
+                gps_port=os.getenv("OPTIC_GPS_PORT"),  # Optional GPS serial port
+                cache_file=str(base_path / "data" / "location_cache.json")
+            )
+            self.location_service.initialize()
+            
+            # Initialize health monitor for system health tracking
+            self.health_monitor = HealthMonitor(
+                check_interval=30.0,
+                alert_cooldown=300.0
+            )
+            self.health_monitor.set_device_id(self.config.device.id)
+            
             if self.config.dashboard.api_url and self.config.dashboard.api_key:
                 device_secret = os.getenv("OPTIC_DEVICE_SECRET", "")
                 self.dashboard_client = DashboardClient(
@@ -100,8 +123,31 @@ class OpticShield:
                 logger.error("Detection service initialization failed")
                 return False
             
-            # Initialize upload service for detection-to-portal uploads
+            # Initialize guaranteed delivery service (production-grade message broker)
             device_secret = os.getenv("OPTIC_DEVICE_SECRET", "")
+            self.delivery_service = GuaranteedDeliveryService(
+                api_url=self.config.dashboard.api_url,
+                api_key=self.config.dashboard.api_key,
+                device_id=self.config.device.id,
+                device_secret=device_secret,
+                broker_db_path=str(base_path / "data" / "message_broker.db"),
+                image_store=self.detection_service.image_store,
+                delivery_interval=5.0,
+                batch_size=10,
+                max_image_size_kb=self.config.alerts.remote.image_max_size_kb
+            )
+            self.delivery_service.initialize()
+            
+            # Set device metadata for delivery service
+            self.delivery_service.set_device_info({
+                "name": self.config.device.name,
+                "environment": self.config.environment,
+                "version": "2.0.0",
+                "hardware_model": "Raspberry Pi 5"
+            })
+            self.delivery_service.set_location(self.location_service.get_location_dict())
+            
+            # Initialize legacy upload service (for backward compatibility)
             self.upload_service = UploadService(
                 api_url=self.config.dashboard.api_url,
                 api_key=self.config.dashboard.api_key,
@@ -119,14 +165,10 @@ class OpticShield:
             self.upload_service.set_device_info({
                 "name": self.config.device.name,
                 "environment": self.config.environment,
-                "version": "1.0.0",
+                "version": "2.0.0",
                 "hardware_model": "Raspberry Pi 5"
             })
-            self.upload_service.set_location({
-                "name": self.config.device.location_name,
-                "latitude": self.config.device.latitude,
-                "longitude": self.config.device.longitude
-            })
+            self.upload_service.set_location(self.location_service.get_location_dict())
             
             self.alert_service = AlertService(
                 config=self.config,
@@ -137,8 +179,16 @@ class OpticShield:
             )
             self.alert_service.initialize()
             
+            # Register health checks for all components
+            self._register_health_checks()
+            
             self.detection_service.add_detection_callback(
                 self.alert_service.handle_detection
+            )
+            
+            # Add callback to queue detections via guaranteed delivery
+            self.detection_service.add_detection_callback(
+                self._handle_detection_for_delivery
             )
             
             logger.info("All components initialized successfully")
@@ -148,24 +198,137 @@ class OpticShield:
             logger.error(f"Initialization failed: {e}", exc_info=True)
             return False
     
+    def _register_health_checks(self):
+        """Register health checks for all components."""
+        if not self.health_monitor:
+            return
+        
+        # Camera health check
+        if self.detection_service and self.detection_service.camera:
+            self.health_monitor.register_health_check(
+                "camera",
+                self.health_monitor.create_camera_health_check(self.detection_service.camera)
+            )
+        
+        # Detector health check
+        if self.detection_service and self.detection_service.detector:
+            self.health_monitor.register_health_check(
+                "detector",
+                self.health_monitor.create_detector_health_check(self.detection_service.detector)
+            )
+        
+        # Delivery service health check
+        if self.delivery_service:
+            self.health_monitor.register_health_check(
+                "delivery",
+                self.health_monitor.create_delivery_health_check(self.delivery_service)
+            )
+        
+        # Register self-healing actions
+        if self.detection_service:
+            self.health_monitor.self_healer.register_recovery_action(
+                "camera",
+                lambda: self._recover_camera()
+            )
+            self.health_monitor.self_healer.register_recovery_action(
+                "detector",
+                lambda: self._recover_detector()
+            )
+    
+    def _recover_camera(self) -> bool:
+        """Attempt to recover the camera."""
+        try:
+            if self.detection_service and self.detection_service.camera:
+                self.detection_service.camera.stop()
+                time.sleep(2)
+                return self.detection_service.camera.initialize()
+        except Exception as e:
+            logger.error(f"Camera recovery failed: {e}")
+        return False
+    
+    def _recover_detector(self) -> bool:
+        """Attempt to recover the detector."""
+        try:
+            if self.detection_service and self.detection_service.detector:
+                self.detection_service.detector.unload()
+                time.sleep(1)
+                return self.detection_service.detector.load_model()
+        except Exception as e:
+            logger.error(f"Detector recovery failed: {e}")
+        return False
+    
+    def _handle_detection_for_delivery(self, event):
+        """Handle detection event for guaranteed delivery."""
+        if not self.delivery_service:
+            return
+        
+        from src.storage.message_broker import MessagePriority
+        
+        for detection in event.detections:
+            # Determine priority based on animal type
+            high_priority_animals = ["tiger", "leopard", "lion", "bear", "elephant"]
+            priority = MessagePriority.CRITICAL if detection.class_name.lower() in high_priority_animals else MessagePriority.NORMAL
+            
+            # Get image data if available
+            image_data = None
+            if hasattr(event.frame, 'data') and event.frame.data is not None:
+                try:
+                    import cv2
+                    _, buffer = cv2.imencode('.jpg', event.frame.data, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                    image_data = buffer.tobytes()
+                except Exception:
+                    pass
+            
+            # Queue for guaranteed delivery
+            self.delivery_service.queue_detection(
+                detection_id=self._get_next_detection_id(),
+                class_name=detection.class_name,
+                class_id=detection.class_id,
+                confidence=detection.confidence,
+                bbox=list(detection.bbox),
+                camera_id=f"cam-{self.config.device.id}-0",
+                timestamp=detection.timestamp,
+                image_data=image_data,
+                priority=priority,
+                metadata={
+                    "processing_time_ms": event.processing_time_ms,
+                    "frame_timestamp": event.timestamp
+                }
+            )
+    
+    def _get_next_detection_id(self) -> int:
+        """Get next detection ID."""
+        if not hasattr(self, '_detection_counter'):
+            self._detection_counter = 0
+        self._detection_counter += 1
+        return self._detection_counter
+    
     def start(self):
         """Start all services."""
         logger.info("Starting OPTIC-SHIELD services...")
         
         self.system_monitor.start()
         
+        # Start location service
+        if self.location_service:
+            self.location_service.start()
+        
+        # Start health monitor
+        if self.health_monitor:
+            self.health_monitor.start()
+        
         if self.dashboard_client:
             self.dashboard_client.set_system_monitor(self.system_monitor)
             
             device_info = {
                 "name": self.config.device.name,
-                "location": {
+                "location": self.location_service.get_location_dict() if self.location_service else {
                     "name": self.config.device.location_name,
                     "latitude": self.config.device.latitude,
                     "longitude": self.config.device.longitude
                 },
                 "environment": self.config.environment,
-                "version": "1.0.0",
+                "version": "2.0.0",
                 "hardware_model": "Raspberry Pi 5",
                 "tags": ["wildlife", "detection", self.config.environment]
             }
@@ -177,7 +340,13 @@ class OpticShield:
             self.dashboard_client.start()
             self.dashboard_client.register_device(device_info)
         
-        # Start upload service for detection-to-portal uploads
+        # Start guaranteed delivery service
+        if self.delivery_service:
+            cameras = self._get_camera_info()
+            self.delivery_service.set_cameras(cameras)
+            self.delivery_service.start()
+        
+        # Start legacy upload service for backward compatibility
         if self.upload_service:
             cameras = self._get_camera_info()
             self.upload_service.set_cameras(cameras)
@@ -210,11 +379,20 @@ class OpticShield:
         if self.alert_service:
             self.alert_service.cleanup()
         
+        if self.delivery_service:
+            self.delivery_service.stop()
+        
         if self.upload_service:
             self.upload_service.stop()
         
         if self.dashboard_client:
             self.dashboard_client.stop()
+        
+        if self.health_monitor:
+            self.health_monitor.stop()
+        
+        if self.location_service:
+            self.location_service.stop()
         
         if self.system_monitor:
             self.system_monitor.stop()
@@ -272,7 +450,8 @@ class OpticShield:
             "device_id": self.config.device.id if self.config else None,
             "device_name": self.config.device.name if self.config else None,
             "environment": self.config.environment if self.config else None,
-            "restart_count": self._restart_count
+            "restart_count": self._restart_count,
+            "version": "2.0.0"
         }
         
         if self.detection_service:
@@ -280,6 +459,9 @@ class OpticShield:
         
         if self.alert_service:
             stats["alert_service"] = self.alert_service.get_stats()
+        
+        if self.delivery_service:
+            stats["delivery_service"] = self.delivery_service.get_stats()
         
         if self.upload_service:
             stats["upload_service"] = self.upload_service.get_stats()
@@ -292,6 +474,12 @@ class OpticShield:
         
         if self.dashboard_client:
             stats["dashboard_client"] = self.dashboard_client.get_stats()
+        
+        if self.health_monitor:
+            stats["health"] = self.health_monitor.get_health_report()
+        
+        if self.location_service:
+            stats["location"] = self.location_service.get_stats()
         
         if self.system_monitor:
             stats["system"] = self.system_monitor.get_stats_dict()
