@@ -56,6 +56,7 @@ class DashboardClient:
     - Automatic retry with exponential backoff
     - Offline queue for when network is unavailable
     - Heartbeat for device status monitoring
+    - Extended telemetry for comprehensive device monitoring
     """
     
     def __init__(
@@ -85,8 +86,37 @@ class DashboardClient:
         self._last_heartbeat_time: float = 0
         self._sync_success_count = 0
         self._sync_failure_count = 0
+        self._detection_count = 0
         
         self._http_client = None
+        self._system_monitor = None
+        self._device_info: Dict[str, Any] = {}
+        self._cameras: List[Dict[str, Any]] = []
+        self._power_info: Dict[str, Any] = {
+            "consumption_watts": None,
+            "source": "unknown",
+            "battery_percent": None
+        }
+    
+    def set_system_monitor(self, monitor) -> None:
+        """Set reference to system monitor for telemetry."""
+        self._system_monitor = monitor
+    
+    def set_device_info(self, info: Dict[str, Any]) -> None:
+        """Set device information for heartbeat."""
+        self._device_info = info
+    
+    def set_cameras(self, cameras: List[Dict[str, Any]]) -> None:
+        """Set camera information for heartbeat."""
+        self._cameras = cameras
+    
+    def set_power_info(self, power_info: Dict[str, Any]) -> None:
+        """Set power information for heartbeat."""
+        self._power_info = power_info
+    
+    def increment_detection_count(self) -> None:
+        """Increment detection count."""
+        self._detection_count += 1
     
     def _get_http_client(self):
         """Lazy initialization of HTTP client."""
@@ -234,12 +264,42 @@ class DashboardClient:
             self._stop_event.wait(self.heartbeat_interval)
     
     def _send_heartbeat(self):
-        """Send device heartbeat to dashboard."""
+        """Send device heartbeat to dashboard with extended telemetry."""
+        system_stats = {}
+        uptime_seconds = 0
+        
+        if self._system_monitor:
+            try:
+                stats = self._system_monitor.get_stats_dict()
+                system_stats = {
+                    "cpu_percent": stats.get("cpu_percent", 0),
+                    "memory_percent": stats.get("memory_percent", 0),
+                    "memory_used_mb": stats.get("memory_used_mb", 0),
+                    "memory_total_mb": stats.get("memory_available_mb", 0) + stats.get("memory_used_mb", 0),
+                    "temperature_celsius": stats.get("temperature_celsius"),
+                    "disk_percent": stats.get("disk_percent", 0),
+                    "disk_used_gb": stats.get("disk_used_gb", 0),
+                    "disk_total_gb": stats.get("disk_used_gb", 0) + stats.get("disk_free_gb", 0)
+                }
+                uptime_seconds = stats.get("uptime_seconds", 0)
+            except Exception as e:
+                logger.warning(f"Failed to get system stats: {e}")
+        
         data = {
             "device_id": self.device_id,
             "timestamp": time.time(),
             "status": "online",
-            "stats": self.get_stats()
+            "info": self._device_info,
+            "stats": {
+                "uptime_seconds": uptime_seconds,
+                "detection_count": self._detection_count,
+                "system": system_stats,
+                "power": self._power_info,
+                "cameras": self._cameras,
+                "network": {
+                    "latency_ms": self._calculate_latency()
+                }
+            }
         }
         
         response = self._make_request("/devices/heartbeat", data=data)
@@ -250,6 +310,19 @@ class DashboardClient:
             logger.debug("Heartbeat sent successfully")
         else:
             self.state = ConnectionState.DISCONNECTED
+    
+    def _calculate_latency(self) -> Optional[int]:
+        """Calculate network latency to dashboard."""
+        if not self._last_heartbeat_time:
+            return None
+        try:
+            start = time.time()
+            response = self._make_request("/api/health", method="GET", timeout=5)
+            if response:
+                return int((time.time() - start) * 1000)
+        except Exception:
+            pass
+        return None
     
     def _sync_loop(self):
         """Background loop for syncing queued detections."""

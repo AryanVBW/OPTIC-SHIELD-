@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { Shield, Camera, Activity, BarChart3, Settings, RefreshCw, Zap } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Shield, Camera, Activity, BarChart3, Settings, RefreshCw, Zap, Wifi, WifiOff } from 'lucide-react'
 import { Device, Detection, DashboardStats } from '@/types'
 import { apiClient } from '@/lib/api-client'
+import { useDeviceStream } from '@/lib/useDeviceStream'
 import { EnhancedStatsOverview } from '@/components/EnhancedStatsOverview'
 import { EnhancedDeviceCard } from '@/components/EnhancedDeviceCard'
 import { EnhancedDetectionList } from '@/components/EnhancedDetectionList'
@@ -15,7 +16,6 @@ import { Badge } from '@/components/ui/Badge'
 import { Sidebar } from '@/components/layout/Sidebar'
 
 export default function Dashboard() {
-  const [devices, setDevices] = useState<Device[]>([])
   const [detections, setDetections] = useState<Detection[]>([])
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [loading, setLoading] = useState(true)
@@ -23,9 +23,28 @@ export default function Dashboard() {
   const [refreshing, setRefreshing] = useState(false)
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
 
+  const { 
+    devices: streamDevices, 
+    isConnected: isStreamConnected,
+    lastUpdate: streamLastUpdate 
+  } = useDeviceStream({
+    onDeviceUpdate: useCallback((device: Device) => {
+      setLastUpdate(new Date())
+    }, [])
+  })
+
+  const [devices, setDevices] = useState<Device[]>([])
+
+  useEffect(() => {
+    if (streamDevices.length > 0) {
+      setDevices(streamDevices)
+      setLastUpdate(streamLastUpdate)
+    }
+  }, [streamDevices, streamLastUpdate])
+
   useEffect(() => {
     fetchDashboardData()
-    const interval = setInterval(fetchDashboardData, 15000)
+    const interval = setInterval(() => fetchDashboardData(), 15000)
     return () => clearInterval(interval)
   }, [])
 
@@ -39,7 +58,10 @@ export default function Dashboard() {
         apiClient.get<DashboardStats>('/api/stats')
       ])
 
-      setDevices(devicesData.devices || [])
+      // Only use API devices if stream is not connected or has no devices
+      if (!isStreamConnected || streamDevices.length === 0) {
+        setDevices(devicesData.devices || [])
+      }
       setDetections(detectionsData.detections || [])
       setStats(statsData)
       setError(null)
@@ -97,15 +119,47 @@ export default function Dashboard() {
             <div>
               <h1 className="text-3xl font-bold text-white tracking-tight mb-1">Mission Control</h1>
               <p className="text-slate-400 flex items-center gap-2">
-                System Status: <span className="text-emerald-400 font-medium flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> Operational</span>
+                System Status: 
+                {isStreamConnected ? (
+                  <span className="text-emerald-400 font-medium flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> 
+                    Live
+                  </span>
+                ) : (
+                  <span className="text-amber-400 font-medium flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-amber-400"></span> 
+                    Connecting...
+                  </span>
+                )}
               </p>
             </div>
-            {lastUpdate && (
-              <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-slate-900/50 border border-slate-800 backdrop-blur-sm text-xs text-slate-400">
-                <RefreshCw className={`w-3 h-3 ${refreshing ? 'animate-spin' : ''}`} />
-                Last updated: {lastUpdate.toLocaleTimeString()}
+            <div className="flex items-center gap-3">
+              {/* Real-time connection indicator */}
+              <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium transition-all ${
+                isStreamConnected 
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' 
+                  : 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+              }`}>
+                {isStreamConnected ? (
+                  <>
+                    <Wifi className="w-3 h-3" />
+                    <span>Real-time</span>
+                  </>
+                ) : (
+                  <>
+                    <WifiOff className="w-3 h-3" />
+                    <span>Reconnecting</span>
+                  </>
+                )}
               </div>
-            )}
+              
+              {lastUpdate && (
+                <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-slate-900/50 border border-slate-800 backdrop-blur-sm text-xs text-slate-400">
+                  <RefreshCw className={`w-3 h-3 ${refreshing ? 'animate-spin' : ''}`} />
+                  Last updated: {lastUpdate.toLocaleTimeString()}
+                </div>
+              )}
+            </div>
           </div>
 
           {error && (

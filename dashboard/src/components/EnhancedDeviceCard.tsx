@@ -1,6 +1,7 @@
 'use client'
 
-import { Cpu, HardDrive, Thermometer, MapPin, Clock, Activity } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { Cpu, HardDrive, Thermometer, MapPin, Clock, Activity, ChevronRight } from 'lucide-react'
 import { Device } from '@/types'
 import { formatDistanceToNow } from 'date-fns'
 import { Card, CardContent } from './ui/Card'
@@ -12,6 +13,15 @@ interface EnhancedDeviceCardProps {
 }
 
 export function EnhancedDeviceCard({ device, onClick }: EnhancedDeviceCardProps) {
+  const router = useRouter()
+  
+  const handleClick = () => {
+    if (onClick) {
+      onClick()
+    } else {
+      router.push(`/devices/${device.id}`)
+    }
+  }
   const isOnline = device.status === 'online'
   const lastSeenText = formatDistanceToNow(new Date(device.lastSeen), { addSuffix: true })
 
@@ -28,7 +38,7 @@ export function EnhancedDeviceCard({ device, onClick }: EnhancedDeviceCardProps)
       variant="glass"
       className={`cursor-pointer transition-all duration-300 group ${isOnline ? 'border-emerald-500/30' : 'border-slate-800'
         }`}
-      onClick={onClick}
+      onClick={handleClick}
     >
       <div className={`absolute inset-0 bg-gradient-to-br ${isOnline ? 'from-emerald-500/5 to-transparent' : 'from-slate-500/5 to-transparent'
         } opacity-0 group-hover:opacity-100 transition-opacity duration-500`} />
@@ -118,9 +128,12 @@ export function EnhancedDeviceCard({ device, onClick }: EnhancedDeviceCardProps)
               {device.stats?.detectionCount || 0} <span className="text-xs text-slate-500">detections</span>
             </span>
           </div>
-          <div className="flex items-center gap-1.5 text-xs font-medium text-slate-500">
-            <Clock className="w-3.5 h-3.5" />
-            <span>{lastSeenText}</span>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 text-xs font-medium text-slate-500">
+              <Clock className="w-3.5 h-3.5" />
+              <span>{lastSeenText}</span>
+            </div>
+            <ChevronRight className="w-4 h-4 text-slate-600 group-hover:text-slate-400 group-hover:translate-x-0.5 transition-all" />
           </div>
         </div>
       </CardContent>

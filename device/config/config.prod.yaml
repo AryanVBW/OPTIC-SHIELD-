@@ -21,6 +21,10 @@ storage:
   images:
     max_storage_mb: 4000
     cleanup_days: 14
+  logs:
+    path: "logs"
+    max_size_mb: 100
+    retention_days: 30
 
 alerts:
   enabled: true
@@ -28,12 +32,21 @@ alerts:
   remote:
     enabled: true
     include_image: true
+    image_max_size_kb: 500
 
 dashboard:
   api_url: "https://your-dashboard.vercel.app/api"
   websocket_url: "wss://your-dashboard.vercel.app/ws"
   sync_interval_seconds: 60
   heartbeat_interval_seconds: 30
+  offline_queue_max_size: 5000
+
+upload:
+  enabled: true
+  batch_size: 10
+  upload_interval_seconds: 30
+  max_image_size_kb: 500
+  retry_attempts: 5
 
 system:
   watchdog:

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { AlertCircle, Filter, Search, Calendar, ChevronRight } from 'lucide-react'
+import { AlertCircle, Filter, Search, Calendar, ChevronRight, MapPin, Camera, Clock, X, Image as ImageIcon, Zap } from 'lucide-react'
 import { Detection } from '@/types'
 import { format } from 'date-fns'
 import { Badge } from './ui/Badge'
@@ -23,12 +23,18 @@ const animalEmojis: Record<string, string> = {
   bear: '🐻',
   zebra: '🦓',
   giraffe: '🦒',
+  tiger: '🐅',
+  lion: '🦁',
+  leopard: '🐆',
+  wolf: '🐺',
+  deer: '🦌',
   default: '🦁'
 }
 
 export function EnhancedDetectionList({ detections }: EnhancedDetectionListProps) {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedClass, setSelectedClass] = useState<string | null>(null)
+  const [selectedDetection, setSelectedDetection] = useState<Detection | null>(null)
 
   const filteredDetections = detections.filter(detection => {
     const matchesSearch = detection.className.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -104,16 +110,30 @@ export function EnhancedDetectionList({ detections }: EnhancedDetectionListProps
         {filteredDetections.map((detection) => (
           <div
             key={`${detection.deviceId}-${detection.id}`}
-            className="group relative flex items-center gap-5 p-4 bg-gradient-to-r from-slate-900/60 to-slate-900/40 rounded-xl border border-slate-700/50 hover:bg-slate-800/60 hover:border-emerald-500/30 transition-all duration-300 hover:shadow-lg hover:shadow-emerald-900/5 overflow-hidden"
+            onClick={() => setSelectedDetection(detection)}
+            className="group relative flex items-center gap-5 p-4 bg-gradient-to-r from-slate-900/60 to-slate-900/40 rounded-xl border border-slate-700/50 hover:bg-slate-800/60 hover:border-emerald-500/30 transition-all duration-300 hover:shadow-lg hover:shadow-emerald-900/5 overflow-hidden cursor-pointer"
           >
             {/* Hover Glint */}
             <div className="absolute top-0 left-0 w-[200%] h-full bg-gradient-to-r from-transparent via-white/5 to-transparent -translate-x-full group-hover:animate-shimmer pointer-events-none" />
 
-            <div className="relative flex-shrink-0 w-12 h-12 flex items-center justify-center bg-slate-800/50 rounded-xl border border-slate-700/50 group-hover:border-emerald-500/30 group-hover:bg-emerald-500/10 transition-colors">
-              <span className="text-2xl transform group-hover:scale-110 transition-transform duration-300">
-                {animalEmojis[detection.className.toLowerCase()] || animalEmojis.default}
-              </span>
-            </div>
+            {/* Image Thumbnail */}
+            {detection.imageUrl ? (
+              <div className="relative flex-shrink-0 w-14 h-14 rounded-xl overflow-hidden border border-slate-700/50 group-hover:border-emerald-500/30 transition-colors">
+                <img 
+                  src={detection.imageUrl} 
+                  alt={detection.className}
+                  className="w-full h-full object-cover"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
+                <ImageIcon className="absolute bottom-1 right-1 w-3 h-3 text-white/70" />
+              </div>
+            ) : (
+              <div className="relative flex-shrink-0 w-14 h-14 flex items-center justify-center bg-slate-800/50 rounded-xl border border-slate-700/50 group-hover:border-emerald-500/30 group-hover:bg-emerald-500/10 transition-colors">
+                <span className="text-2xl transform group-hover:scale-110 transition-transform duration-300">
+                  {animalEmojis[detection.className.toLowerCase()] || animalEmojis.default}
+                </span>
+              </div>
+            )}
 
             <div className="flex-1 min-w-0 z-10">
               <div className="flex items-center gap-3 mb-1">
@@ -127,12 +147,23 @@ export function EnhancedDetectionList({ detections }: EnhancedDetectionListProps
                 >
                   {(detection.confidence * 100).toFixed(0)}%
                 </Badge>
+                {detection.metadata?.priority === 'high' && (
+                  <Badge variant="error" size="sm" className="bg-red-500/20 border-red-500/30">
+                    High Priority
+                  </Badge>
+                )}
               </div>
               <div className="flex items-center gap-4 text-xs font-medium text-slate-500">
                 <div className="flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-slate-600 group-hover:bg-emerald-500 transition-colors" />
                   <span className="truncate max-w-[150px]">{detection.deviceName}</span>
                 </div>
+                {detection.location && (
+                  <div className="hidden md:flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5" />
+                    <span className="truncate max-w-[100px]">{detection.location.name}</span>
+                  </div>
+                )}
                 <div className="hidden sm:flex items-center gap-1.5">
                   <Calendar className="w-3.5 h-3.5" />
                   <span>{format(new Date(detection.timestamp), 'MMM d, yyyy')}</span>
@@ -168,6 +199,119 @@ export function EnhancedDetectionList({ detections }: EnhancedDetectionListProps
           </div>
         )}
       </div>
+
+      {/* Detection Detail Modal */}
+      {selectedDetection && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={() => setSelectedDetection(null)}>
+          <div 
+            className="relative w-full max-w-2xl bg-slate-900 rounded-2xl border border-slate-700/50 shadow-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b border-slate-700/50">
+              <div className="flex items-center gap-3">
+                <span className="text-3xl">
+                  {animalEmojis[selectedDetection.className.toLowerCase()] || animalEmojis.default}
+                </span>
+                <div>
+                  <h3 className="text-xl font-bold text-white capitalize">{selectedDetection.className}</h3>
+                  <p className="text-sm text-slate-400">{selectedDetection.deviceName}</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setSelectedDetection(null)}
+                className="p-2 rounded-lg hover:bg-slate-800 transition-colors"
+              >
+                <X className="w-5 h-5 text-slate-400" />
+              </button>
+            </div>
+
+            {/* Image */}
+            {selectedDetection.imageUrl ? (
+              <div className="relative aspect-video bg-slate-950">
+                <img 
+                  src={selectedDetection.imageUrl} 
+                  alt={`${selectedDetection.className} detection`}
+                  className="w-full h-full object-contain"
+                />
+                {/* Bounding box overlay indicator */}
+                {selectedDetection.bbox && selectedDetection.bbox.length === 4 && (
+                  <div className="absolute top-2 left-2 px-2 py-1 bg-red-500/80 rounded text-xs text-white font-medium">
+                    Detection Area Marked
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="aspect-video bg-slate-950 flex items-center justify-center">
+                <div className="text-center text-slate-600">
+                  <ImageIcon className="w-16 h-16 mx-auto mb-2 opacity-30" />
+                  <p>No image captured</p>
+                </div>
+              </div>
+            )}
+
+            {/* Details */}
+            <div className="p-4 space-y-4">
+              {/* Stats Row */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="p-3 bg-slate-800/50 rounded-lg">
+                  <div className="text-xs text-slate-500 mb-1">Confidence</div>
+                  <div className="text-lg font-bold text-emerald-400">
+                    {(selectedDetection.confidence * 100).toFixed(1)}%
+                  </div>
+                </div>
+                <div className="p-3 bg-slate-800/50 rounded-lg">
+                  <div className="text-xs text-slate-500 mb-1">Time</div>
+                  <div className="text-lg font-bold text-white">
+                    {format(new Date(selectedDetection.timestamp), 'HH:mm:ss')}
+                  </div>
+                </div>
+                <div className="p-3 bg-slate-800/50 rounded-lg">
+                  <div className="text-xs text-slate-500 mb-1">Date</div>
+                  <div className="text-lg font-bold text-white">
+                    {format(new Date(selectedDetection.timestamp), 'MMM d')}
+                  </div>
+                </div>
+                <div className="p-3 bg-slate-800/50 rounded-lg">
+                  <div className="text-xs text-slate-500 mb-1">Priority</div>
+                  <div className="text-lg font-bold text-white capitalize">
+                    {selectedDetection.metadata?.priority || 'Normal'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Location & Camera */}
+              <div className="flex flex-wrap gap-3 text-sm">
+                {selectedDetection.cameraId && (
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-800/50 rounded-lg text-slate-300">
+                    <Camera className="w-4 h-4 text-blue-400" />
+                    <span>{selectedDetection.cameraId}</span>
+                  </div>
+                )}
+                {selectedDetection.location && (
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-800/50 rounded-lg text-slate-300">
+                    <MapPin className="w-4 h-4 text-red-400" />
+                    <span>{selectedDetection.location.name}</span>
+                  </div>
+                )}
+                {selectedDetection.metadata?.processingTimeMs && (
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-800/50 rounded-lg text-slate-300">
+                    <Zap className="w-4 h-4 text-yellow-400" />
+                    <span>{selectedDetection.metadata.processingTimeMs.toFixed(0)}ms</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Event ID */}
+              {selectedDetection.eventId && (
+                <div className="text-xs text-slate-600 font-mono">
+                  Event ID: {selectedDetection.eventId}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

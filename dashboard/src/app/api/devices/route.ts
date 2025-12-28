@@ -1,22 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { verifyRequest, getDeviceStore } from '@/lib/auth'
+import { verifyRequest, getDeviceStore, getAllDevices, broadcastDeviceUpdate } from '@/lib/auth'
 import { Device } from '@/types'
 
 const deviceStore = getDeviceStore()
 
 export async function GET(request: NextRequest) {
   try {
-    const devices = Array.from(deviceStore.values())
-    
-    const now = Date.now()
-    const devicesWithStatus = devices.map(device => ({
-      ...device,
-      status: (now - new Date(device.lastSeen).getTime()) < 120000 ? 'online' : 'offline'
-    }))
+    const devices = getAllDevices()
 
     return NextResponse.json({ 
       success: true, 
-      devices: devicesWithStatus 
+      devices 
     })
   } catch (error) {
     console.error('Error fetching devices:', error)
@@ -47,26 +41,47 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const now = new Date().toISOString()
     const device: Device = {
       id: device_id,
       name: info?.name || device_id,
       status: 'online',
-      lastSeen: new Date().toISOString(),
+      lastSeen: now,
       location: {
         name: info?.location?.name || 'Unknown',
         latitude: info?.location?.latitude || 0,
-        longitude: info?.location?.longitude || 0
+        longitude: info?.location?.longitude || 0,
+        altitude: info?.location?.altitude,
+        timezone: info?.location?.timezone
       },
       stats: {
         uptime: 0,
         detectionCount: 0,
         cpuPercent: 0,
         memoryPercent: 0,
-        temperature: null
-      }
+        memoryUsedMb: 0,
+        memoryTotalMb: 0,
+        temperature: null,
+        temperatureUnit: 'celsius',
+        storageUsedGb: 0,
+        storageTotalGb: 0,
+        storagePercent: 0,
+        powerConsumptionWatts: null,
+        powerSource: 'unknown',
+        batteryPercent: null,
+        networkLatencyMs: null,
+        lastHeartbeat: now
+      },
+      cameras: info?.cameras || [],
+      cameraCount: info?.cameras?.length || 0,
+      firmwareVersion: info?.version || '1.0.0',
+      hardwareModel: info?.hardware_model || 'Raspberry Pi 5',
+      environment: info?.environment || 'production',
+      tags: info?.tags || []
     }
 
     deviceStore.set(device_id, device)
+    broadcastDeviceUpdate(device)
 
     return NextResponse.json({ 
       success: true, 

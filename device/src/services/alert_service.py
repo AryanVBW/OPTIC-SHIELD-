@@ -16,6 +16,14 @@ from .detection_service import DetectionEvent
 
 logger = logging.getLogger(__name__)
 
+# Import conditionally to avoid circular imports
+try:
+    from .upload_service import UploadService
+    from .event_logger import EventLogger
+except ImportError:
+    UploadService = None
+    EventLogger = None
+
 
 class AlertService:
     """
@@ -24,26 +32,33 @@ class AlertService:
     Features:
     - Local GPIO alerts (buzzer, LED)
     - Remote dashboard notifications
+    - Detection-to-portal image uploads
     - Alert cooldown management
     - Priority-based alert handling
+    - Event logging for audit trail
     """
     
-    HIGH_PRIORITY_CLASSES = ["bear", "elephant", "wolf"]
+    HIGH_PRIORITY_CLASSES = ["bear", "elephant", "wolf", "tiger", "lion", "leopard"]
     
     def __init__(
         self,
         config: Config,
         dashboard_client: Optional[DashboardClient] = None,
-        image_store: Optional[ImageStore] = None
+        image_store: Optional[ImageStore] = None,
+        upload_service: Optional['UploadService'] = None,
+        event_logger: Optional['EventLogger'] = None
     ):
         self.config = config
         self.dashboard_client = dashboard_client
         self.image_store = image_store
+        self.upload_service = upload_service
+        self.event_logger = event_logger
         
         self._gpio_available = False
         self._gpio = None
         self._alert_count = 0
         self._last_alert_time: Dict[str, float] = {}
+        self._camera_id = f"cam-{config.device.id}-0"
     
     def initialize(self) -> bool:
         """Initialize alert service."""
@@ -82,7 +97,11 @@ class AlertService:
             if self.config.alerts.local.gpio_enabled and self._gpio_available:
                 self._trigger_local_alert(detection.class_name, is_high_priority)
             
-            if self.config.alerts.remote.enabled and self.dashboard_client:
+            # Use new upload service for detection-to-portal uploads
+            if self.upload_service and self.config.alerts.remote.enabled:
+                self._upload_detection(event, detection, is_high_priority)
+            elif self.config.alerts.remote.enabled and self.dashboard_client:
+                # Fallback to legacy dashboard client
                 self._send_remote_alert(event, detection, is_high_priority)
             
             self._alert_count += 1
@@ -196,12 +215,74 @@ class AlertService:
             except Exception:
                 pass
     
+    def _upload_detection(
+        self,
+        event: DetectionEvent,
+        detection,
+        high_priority: bool = False
+    ):
+        """Upload detection to portal using the upload service."""
+        if not self.upload_service:
+            return
+        
+        try:
+            # Get image data for upload
+            image_data = None
+            image_base64 = None
+            
+            if self.config.alerts.remote.include_image:
+                image_base64 = self._get_compressed_image(event.frame.data)
+            
+            metadata = {
+                "processing_time_ms": event.processing_time_ms,
+                "priority": "high" if high_priority else "normal",
+                "frame_timestamp": event.timestamp
+            }
+            
+            if high_priority:
+                # Immediate upload for high-priority detections
+                result = self.upload_service.upload_immediate(
+                    detection_id=self._alert_count,
+                    class_name=detection.class_name,
+                    class_id=detection.class_id,
+                    confidence=detection.confidence,
+                    bbox=list(detection.bbox),
+                    camera_id=self._camera_id,
+                    image_base64=image_base64,
+                    metadata=metadata
+                )
+                if result.success:
+                    logger.info(f"High-priority detection uploaded: {detection.class_name}")
+                else:
+                    logger.warning(f"High-priority upload queued for retry: {detection.class_name}")
+            else:
+                # Queue for batch upload
+                event_id = self.upload_service.queue_detection(
+                    detection_id=self._alert_count,
+                    class_name=detection.class_name,
+                    class_id=detection.class_id,
+                    confidence=detection.confidence,
+                    bbox=list(detection.bbox),
+                    camera_id=self._camera_id,
+                    image_path=None,
+                    image_data=image_base64.encode() if image_base64 else None,
+                    priority=5 if detection.class_name in self.HIGH_PRIORITY_CLASSES else 0,
+                    metadata=metadata
+                )
+                logger.debug(f"Detection queued for upload: {event_id}")
+                
+        except Exception as e:
+            logger.error(f"Failed to upload detection: {e}")
+            if self.event_logger:
+                self.event_logger.log_system_error(str(e), "alert_service")
+    
     def get_stats(self) -> Dict[str, Any]:
         """Get alert service statistics."""
         return {
             "enabled": self.config.alerts.enabled,
             "gpio_available": self._gpio_available,
             "remote_enabled": self.config.alerts.remote.enabled,
+            "upload_service_active": self.upload_service is not None,
             "alert_count": self._alert_count,
             "last_alerts": dict(self._last_alert_time)
         }

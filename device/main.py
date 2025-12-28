@@ -18,6 +18,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 from src.core.config import Config
 from src.services.detection_service import DetectionService, ServiceState
 from src.services.alert_service import AlertService
+from src.services.upload_service import UploadService
+from src.services.event_logger import EventLogger
+from src.storage.offline_queue import OfflineQueue
 from src.api.dashboard_client import DashboardClient
 from src.utils.logging_setup import setup_logging
 from src.utils.system_monitor import SystemMonitor
@@ -37,6 +40,9 @@ class OpticShield:
         self.detection_service: DetectionService = None
         self.alert_service: AlertService = None
         self.dashboard_client: DashboardClient = None
+        self.upload_service: UploadService = None
+        self.event_logger: EventLogger = None
+        self.offline_queue: OfflineQueue = None
         self.system_monitor: SystemMonitor = None
         self._restart_count = 0
     
@@ -60,6 +66,22 @@ class OpticShield:
                 check_interval=30
             )
             
+            # Initialize event logger for audit trail
+            base_path = self.config.get_base_path()
+            self.event_logger = EventLogger(
+                log_dir=str(base_path / "data" / "event_logs"),
+                device_id=self.config.device.id,
+                retention_days=self.config.storage.logs_retention_days
+            )
+            self.event_logger.initialize()
+            
+            # Initialize offline queue for reliable uploads
+            self.offline_queue = OfflineQueue(
+                db_path=str(base_path / "data" / "offline_queue.db"),
+                max_queue_size=self.config.dashboard.offline_queue_max_size
+            )
+            self.offline_queue.initialize()
+            
             if self.config.dashboard.api_url and self.config.dashboard.api_key:
                 device_secret = os.getenv("OPTIC_DEVICE_SECRET", "")
                 self.dashboard_client = DashboardClient(
@@ -78,10 +100,40 @@ class OpticShield:
                 logger.error("Detection service initialization failed")
                 return False
             
+            # Initialize upload service for detection-to-portal uploads
+            device_secret = os.getenv("OPTIC_DEVICE_SECRET", "")
+            self.upload_service = UploadService(
+                api_url=self.config.dashboard.api_url,
+                api_key=self.config.dashboard.api_key,
+                device_id=self.config.device.id,
+                device_secret=device_secret,
+                offline_queue=self.offline_queue,
+                image_store=self.detection_service.image_store,
+                event_logger=self.event_logger,
+                upload_interval=30,
+                batch_size=5,
+                max_image_size_kb=self.config.alerts.remote.image_max_size_kb
+            )
+            
+            # Set device metadata for uploads
+            self.upload_service.set_device_info({
+                "name": self.config.device.name,
+                "environment": self.config.environment,
+                "version": "1.0.0",
+                "hardware_model": "Raspberry Pi 5"
+            })
+            self.upload_service.set_location({
+                "name": self.config.device.location_name,
+                "latitude": self.config.device.latitude,
+                "longitude": self.config.device.longitude
+            })
+            
             self.alert_service = AlertService(
                 config=self.config,
                 dashboard_client=self.dashboard_client,
-                image_store=self.detection_service.image_store
+                image_store=self.detection_service.image_store,
+                upload_service=self.upload_service,
+                event_logger=self.event_logger
             )
             self.alert_service.initialize()
             
@@ -103,9 +155,9 @@ class OpticShield:
         self.system_monitor.start()
         
         if self.dashboard_client:
-            self.dashboard_client.start()
+            self.dashboard_client.set_system_monitor(self.system_monitor)
             
-            self.dashboard_client.register_device({
+            device_info = {
                 "name": self.config.device.name,
                 "location": {
                     "name": self.config.device.location_name,
@@ -113,12 +165,40 @@ class OpticShield:
                     "longitude": self.config.device.longitude
                 },
                 "environment": self.config.environment,
-                "version": "1.0.0"
-            })
+                "version": "1.0.0",
+                "hardware_model": "Raspberry Pi 5",
+                "tags": ["wildlife", "detection", self.config.environment]
+            }
+            self.dashboard_client.set_device_info(device_info)
+            
+            cameras = self._get_camera_info()
+            self.dashboard_client.set_cameras(cameras)
+            
+            self.dashboard_client.start()
+            self.dashboard_client.register_device(device_info)
+        
+        # Start upload service for detection-to-portal uploads
+        if self.upload_service:
+            cameras = self._get_camera_info()
+            self.upload_service.set_cameras(cameras)
+            self.upload_service.start()
         
         self.detection_service.start()
         
         logger.info("All services started")
+    
+    def _get_camera_info(self) -> list:
+        """Get camera information for telemetry."""
+        cameras = []
+        if self.config.camera.enabled:
+            cameras.append({
+                "id": f"cam-{self.config.device.id}-0",
+                "name": "Primary Camera",
+                "model": "Pi Camera Module 3" if not self.config.camera.fallback_usb else "USB Camera",
+                "resolution": f"{self.config.camera.width}x{self.config.camera.height}",
+                "status": "active"
+            })
+        return cameras
     
     def stop(self):
         """Stop all services gracefully."""
@@ -129,6 +209,9 @@ class OpticShield:
         
         if self.alert_service:
             self.alert_service.cleanup()
+        
+        if self.upload_service:
+            self.upload_service.stop()
         
         if self.dashboard_client:
             self.dashboard_client.stop()
@@ -197,6 +280,15 @@ class OpticShield:
         
         if self.alert_service:
             stats["alert_service"] = self.alert_service.get_stats()
+        
+        if self.upload_service:
+            stats["upload_service"] = self.upload_service.get_stats()
+        
+        if self.offline_queue:
+            stats["offline_queue"] = self.offline_queue.get_stats()
+        
+        if self.event_logger:
+            stats["event_logger"] = self.event_logger.get_stats()
         
         if self.dashboard_client:
             stats["dashboard_client"] = self.dashboard_client.get_stats()

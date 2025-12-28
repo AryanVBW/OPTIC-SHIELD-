@@ -42,10 +42,20 @@ A production-ready, deeply optimized wildlife detection system designed for depl
 - **Local Storage**: SQLite database + image storage with auto-cleanup
 - **Cellular Alerts**: Minimal bandwidth usage (JSON + compressed images)
 
+### Detection-to-Portal Upload System
+- **Automatic Photo Capture**: Captures image at moment of detection
+- **Secure Image Upload**: Compressed images uploaded to portal with metadata
+- **Offline Queue**: Persistent SQLite-backed queue survives restarts
+- **Intermittent Connectivity**: Automatic retry with exponential backoff
+- **Event Logging**: Complete audit trail of all detection events
+- **Priority Handling**: High-priority animals (bear, elephant, etc.) uploaded immediately
+- **Full Metadata**: Device ID, camera ID, location, timestamp, confidence
+
 ### Web Dashboard (Vercel)
 - **Real-time Monitoring**: Live device status and detections
 - **Multi-device Support**: Manage multiple field devices
-- **Detection History**: Browse and filter past detections
+- **Detection History**: Browse and filter past detections with images
+- **Image Viewer**: Click any detection to view captured image with metadata
 - **Analytics**: Detection trends, species distribution
 - **Secure API**: JWT authentication, HTTPS only
 

@@ -13,6 +13,9 @@ PyYAML>=6.0
 # OpenCV for USB camera fallback and image processing
 opencv-python-headless>=4.5.0
 
+# HTTP client for API communication
+requests>=2.28.0
+
 # Optional: GPIO support for local alerts (Raspberry Pi only)
 # RPi.GPIO  # Uncomment on Raspberry Pi
 
