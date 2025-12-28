@@ -33,6 +33,30 @@ export interface DeviceStats {
   lastHeartbeat: string
 }
 
+export interface DeviceUpdateStatus {
+  status: 'idle' | 'checking' | 'downloading' | 'applying' | 'restarting' | 'success' | 'failed' | 'up_to_date'
+  currentVersion: string
+  latestVersion: string
+  updateAvailable: boolean
+  commitsBehind: number
+  changes: string[]
+  lastCheck: number
+  lastUpdate: {
+    success: boolean
+    status: string
+    message: string
+    oldVersion: string
+    newVersion: string
+    timestamp: number
+    source: 'manual' | 'portal' | 'scheduled' | 'auto'
+  } | null
+  pendingCommand: {
+    action: 'check' | 'update' | 'restart'
+    timestamp: number
+    triggeredBy: string
+  } | null
+}
+
 export interface Device {
   id: string
   name: string
@@ -46,6 +70,7 @@ export interface Device {
   hardwareModel: string
   environment: 'production' | 'development' | 'staging'
   tags: string[]
+  updateStatus?: DeviceUpdateStatus
 }
 
 export interface DetectionLocation {

@@ -23,6 +23,7 @@ from src.services.event_logger import EventLogger
 from src.services.delivery_service import GuaranteedDeliveryService
 from src.services.location_service import LocationService
 from src.services.health_monitor import HealthMonitor, HealthStatus, HealthCheck
+from src.services.update_service import UpdateService, UpdateSource
 from src.storage.offline_queue import OfflineQueue
 from src.api.dashboard_client import DashboardClient
 from src.utils.logging_setup import setup_logging
@@ -50,6 +51,7 @@ class OpticShield:
         self.delivery_service: GuaranteedDeliveryService = None
         self.location_service: LocationService = None
         self.health_monitor: HealthMonitor = None
+        self.update_service: UpdateService = None
         self._restart_count = 0
     
     def initialize(self) -> bool:
@@ -189,6 +191,30 @@ class OpticShield:
             # Add callback to queue detections via guaranteed delivery
             self.detection_service.add_detection_callback(
                 self._handle_detection_for_delivery
+            )
+            
+            # Initialize update service for automatic updates
+            device_secret = os.getenv("OPTIC_DEVICE_SECRET", "")
+            self.update_service = UpdateService(
+                repo_path=str(Path(__file__).parent.parent),  # Root of the repo
+                remote_name="origin",
+                branch=os.getenv("OPTIC_UPDATE_BRANCH", "main"),
+                check_interval=float(os.getenv("OPTIC_UPDATE_INTERVAL", "3600")),
+                auto_update=os.getenv("OPTIC_AUTO_UPDATE", "false").lower() == "true",
+                service_name="optic-shield",
+                api_url=self.config.dashboard.api_url,
+                api_key=self.config.dashboard.api_key,
+                device_id=self.config.device.id,
+                device_secret=device_secret
+            )
+            self.update_service.initialize()
+            
+            # Register update callbacks
+            self.update_service.add_update_available_callback(
+                lambda info: logger.info(f"Update available: {info.commits_behind} commits behind")
+            )
+            self.update_service.add_update_complete_callback(
+                lambda result: logger.info(f"Update complete: {result.message}")
             )
             
             logger.info("All components initialized successfully")
@@ -352,6 +378,10 @@ class OpticShield:
             self.upload_service.set_cameras(cameras)
             self.upload_service.start()
         
+        # Start update service
+        if self.update_service:
+            self.update_service.start()
+        
         self.detection_service.start()
         
         logger.info("All services started")
@@ -387,6 +417,9 @@ class OpticShield:
         
         if self.dashboard_client:
             self.dashboard_client.stop()
+        
+        if self.update_service:
+            self.update_service.stop()
         
         if self.health_monitor:
             self.health_monitor.stop()
@@ -483,6 +516,9 @@ class OpticShield:
         
         if self.system_monitor:
             stats["system"] = self.system_monitor.get_stats_dict()
+        
+        if self.update_service:
+            stats["update_service"] = self.update_service.get_stats()
         
         return stats
 

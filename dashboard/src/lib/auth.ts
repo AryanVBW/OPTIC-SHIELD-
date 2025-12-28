@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { Device, Detection, DeviceTelemetry } from '@/types'
+import { Device, Detection, DeviceTelemetry, DeviceUpdateStatus } from '@/types'
 
 const API_SECRET_KEY = process.env.API_SECRET_KEY || 'development-key'
 
@@ -7,6 +7,7 @@ const deviceStore = new Map<string, Device>()
 const detectionStore = new Map<string, Detection[]>()
 const deviceUpdateCallbacks: Set<(device: Device) => void> = new Set()
 const telemetryHistory = new Map<string, DeviceTelemetry[]>()
+const updateStatusStore = new Map<string, DeviceUpdateStatus>()
 
 export function getDeviceStore(): Map<string, Device> {
   return deviceStore
@@ -120,5 +121,24 @@ export function getDeviceById(deviceId: string): Device | undefined {
     status: isRecent 
       ? device.status === 'maintenance' ? 'maintenance' : 'online' 
       : 'offline'
+  }
+}
+
+export function getUpdateStatusStore(): Map<string, DeviceUpdateStatus> {
+  return updateStatusStore
+}
+
+export function getDeviceUpdateStatus(deviceId: string): DeviceUpdateStatus | undefined {
+  return updateStatusStore.get(deviceId)
+}
+
+export function setDeviceUpdateStatus(deviceId: string, status: DeviceUpdateStatus): void {
+  updateStatusStore.set(deviceId, status)
+  
+  // Also update the device in deviceStore
+  const device = deviceStore.get(deviceId)
+  if (device) {
+    device.updateStatus = status
+    deviceStore.set(deviceId, device)
   }
 }

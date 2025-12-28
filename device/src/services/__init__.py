@@ -7,6 +7,7 @@ from .event_logger import EventLogger, EventType, DetectionEventLog
 from .delivery_service import GuaranteedDeliveryService, DeliveryResult, DeliveryStatus, DeliveryMetrics
 from .location_service import LocationService, LocationData, GPSReader
 from .health_monitor import HealthMonitor, HealthCheck, HealthStatus, MetricsCollector, SelfHealer, Alert
+from .update_service import UpdateService, UpdateStatus, UpdateResult, UpdateInfo, UpdateSource
 
 __all__ = [
     'DetectionService',
@@ -30,5 +31,10 @@ __all__ = [
     'HealthStatus',
     'MetricsCollector',
     'SelfHealer',
-    'Alert'
+    'Alert',
+    'UpdateService',
+    'UpdateStatus',
+    'UpdateResult',
+    'UpdateInfo',
+    'UpdateSource'
 ]

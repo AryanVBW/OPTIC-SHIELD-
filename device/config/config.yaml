@@ -197,6 +197,26 @@ system:
   # Graceful shutdown timeout
   shutdown_timeout_seconds: 10
 
+# Automatic Updates
+updates:
+  enabled: true
+  
+  # Git remote and branch to pull from
+  remote: "origin"
+  branch: "main"
+  
+  # Check interval in seconds (default: 1 hour)
+  check_interval_seconds: 3600
+  
+  # Auto-apply updates without manual trigger
+  auto_update: false
+  
+  # Service name for restart
+  service_name: "optic-shield"
+  
+  # Notify portal of update status
+  report_to_portal: true
+
 # Logging
 logging:
   level: "INFO"

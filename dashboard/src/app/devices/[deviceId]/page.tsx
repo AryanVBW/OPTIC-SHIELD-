@@ -31,6 +31,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { Badge } from '@/components/ui/Badge'
 import { StatusIndicator } from '@/components/ui/StatusIndicator'
+import { DeviceUpdatePanel } from '@/components/DeviceUpdatePanel'
 
 interface DeviceDetailResponse {
   success: boolean
@@ -375,6 +376,14 @@ export default function DeviceDetailPage() {
                 )}
               </CardContent>
             </Card>
+
+            {/* Software Updates Card */}
+            <DeviceUpdatePanel
+              deviceId={device.id}
+              deviceName={device.name}
+              updateStatus={device.updateStatus}
+              onUpdateTriggered={handleRefresh}
+            />
           </div>
 
           {/* Middle & Right Columns - Metrics */}
