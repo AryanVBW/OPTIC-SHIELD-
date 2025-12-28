@@ -1,13 +1,13 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { AlertCircle, Filter, Search, Calendar, ChevronRight, MapPin, Image as ImageIcon } from 'lucide-react'
 import { Detection } from '@/types'
 import { format } from 'date-fns'
 import { Badge } from './ui/Badge'
 import { Button } from './ui/Button'
 import { Card } from './ui/Card'
-import { DetectionDetailModal } from './DetectionDetailModal'
 
 interface EnhancedDetectionListProps {
   detections: Detection[]
@@ -27,9 +27,9 @@ const wildCatEmojis: Record<string, string> = {
 }
 
 export function EnhancedDetectionList({ detections }: EnhancedDetectionListProps) {
+  const router = useRouter()
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedClass, setSelectedClass] = useState<string | null>(null)
-  const [selectedDetection, setSelectedDetection] = useState<Detection | null>(null)
 
   const filteredDetections = detections.filter(detection => {
     const matchesSearch = detection.className.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -105,7 +105,7 @@ export function EnhancedDetectionList({ detections }: EnhancedDetectionListProps
         {filteredDetections.map((detection) => (
           <div
             key={`${detection.deviceId}-${detection.id}`}
-            onClick={() => setSelectedDetection(detection)}
+            onClick={() => router.push(`/detection/${detection.deviceId}-${detection.id}`)}
             className="group relative flex items-center gap-5 p-4 spotlight-card glass-panel rounded-xl cursor-pointer transition-all duration-300 hover:border-nexus-accent/30"
           >
             {/* Hover Glint */}
@@ -194,9 +194,6 @@ export function EnhancedDetectionList({ detections }: EnhancedDetectionListProps
           </div>
         )}
       </div>
-
-      {/* Detection Detail Modal */}
-      <DetectionDetailModal detection={selectedDetection} onClose={() => setSelectedDetection(null)} />
     </div>
   )
 }
