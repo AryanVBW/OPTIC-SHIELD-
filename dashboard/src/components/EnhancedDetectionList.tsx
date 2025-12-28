@@ -1,12 +1,13 @@
 'use client'
 
 import { useState } from 'react'
-import { AlertCircle, Filter, Search, Calendar, ChevronRight, MapPin, Camera, Clock, X, Image as ImageIcon, Zap } from 'lucide-react'
+import { AlertCircle, Filter, Search, Calendar, ChevronRight, MapPin, Image as ImageIcon } from 'lucide-react'
 import { Detection } from '@/types'
 import { format } from 'date-fns'
 import { Badge } from './ui/Badge'
 import { Button } from './ui/Button'
 import { Card } from './ui/Card'
+import { DetectionDetailModal } from './DetectionDetailModal'
 
 interface EnhancedDetectionListProps {
   detections: Detection[]
@@ -195,121 +196,7 @@ export function EnhancedDetectionList({ detections }: EnhancedDetectionListProps
       </div>
 
       {/* Detection Detail Modal */}
-      {selectedDetection && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md" onClick={() => setSelectedDetection(null)}>
-          <div
-            className="relative w-full max-w-2xl glass-panel spotlight-card rounded-2xl shadow-2xl overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Local Noise Texture */}
-            <div className="absolute inset-0 z-0 pointer-events-none opacity-[0.03]" style={{
-              backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`
-            }} />
-            {/* Header */}
-            <div className="flex items-center justify-between p-4 border-b border-border dark:border-slate-700/50">
-              <div className="flex items-center gap-3">
-                <span className="text-3xl">
-                  {wildCatEmojis[selectedDetection.className.toLowerCase()] || wildCatEmojis.default}
-                </span>
-                <div>
-                  <h3 className="text-xl font-bold text-foreground capitalize">{selectedDetection.className}</h3>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">{selectedDetection.deviceName}</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setSelectedDetection(null)}
-                className="p-2 rounded-lg hover:bg-slate-800 transition-colors"
-              >
-                <X className="w-5 h-5 text-slate-400" />
-              </button>
-            </div>
-
-            {/* Image */}
-            {selectedDetection.imageUrl ? (
-              <div className="relative aspect-video bg-slate-950">
-                <img
-                  src={selectedDetection.imageUrl}
-                  alt={`${selectedDetection.className} detection`}
-                  className="w-full h-full object-contain"
-                />
-                {/* Bounding box overlay indicator */}
-                {selectedDetection.bbox && selectedDetection.bbox.length === 4 && (
-                  <div className="absolute top-2 left-2 px-2 py-1 bg-red-500/80 rounded text-xs text-white font-medium">
-                    Detection Area Marked
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="aspect-video bg-slate-950 flex items-center justify-center">
-                <div className="text-center text-slate-600">
-                  <ImageIcon className="w-16 h-16 mx-auto mb-2 opacity-30" />
-                  <p>No image captured</p>
-                </div>
-              </div>
-            )}
-
-            {/* Details */}
-            <div className="p-4 space-y-4">
-              {/* Stats Row */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div className="p-3 bg-slate-100 dark:bg-slate-800/50 rounded-lg">
-                  <div className="text-xs text-slate-500 mb-1">Confidence</div>
-                  <div className="text-lg font-bold text-emerald-500 dark:text-emerald-400">
-                    {(selectedDetection.confidence * 100).toFixed(1)}%
-                  </div>
-                </div>
-                <div className="p-3 bg-slate-100 dark:bg-slate-800/50 rounded-lg">
-                  <div className="text-xs text-slate-500 mb-1">Time</div>
-                  <div className="text-lg font-bold text-foreground">
-                    {format(new Date(selectedDetection.timestamp), 'HH:mm:ss')}
-                  </div>
-                </div>
-                <div className="p-3 bg-slate-100 dark:bg-slate-800/50 rounded-lg">
-                  <div className="text-xs text-slate-500 mb-1">Date</div>
-                  <div className="text-lg font-bold text-foreground">
-                    {format(new Date(selectedDetection.timestamp), 'MMM d')}
-                  </div>
-                </div>
-                <div className="p-3 bg-slate-100 dark:bg-slate-800/50 rounded-lg">
-                  <div className="text-xs text-slate-500 mb-1">Priority</div>
-                  <div className="text-lg font-bold text-foreground capitalize">
-                    {selectedDetection.metadata?.priority || 'Normal'}
-                  </div>
-                </div>
-              </div>
-
-              {/* Location & Camera */}
-              <div className="flex flex-wrap gap-3 text-sm">
-                {selectedDetection.cameraId && (
-                  <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-800/50 rounded-lg text-slate-600 dark:text-slate-300">
-                    <Camera className="w-4 h-4 text-blue-500 dark:text-blue-400" />
-                    <span>{selectedDetection.cameraId}</span>
-                  </div>
-                )}
-                {selectedDetection.location && (
-                  <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-800/50 rounded-lg text-slate-600 dark:text-slate-300">
-                    <MapPin className="w-4 h-4 text-red-500 dark:text-red-400" />
-                    <span>{selectedDetection.location.name}</span>
-                  </div>
-                )}
-                {selectedDetection.metadata?.processingTimeMs && (
-                  <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-800/50 rounded-lg text-slate-600 dark:text-slate-300">
-                    <Zap className="w-4 h-4 text-yellow-500 dark:text-yellow-400" />
-                    <span>{selectedDetection.metadata.processingTimeMs.toFixed(0)}ms</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Event ID */}
-              {selectedDetection.eventId && (
-                <div className="text-xs text-slate-600 font-mono">
-                  Event ID: {selectedDetection.eventId}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      <DetectionDetailModal detection={selectedDetection} onClose={() => setSelectedDetection(null)} />
     </div>
   )
 }
