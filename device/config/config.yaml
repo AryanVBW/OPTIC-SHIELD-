@@ -132,3 +132,60 @@ logging:
   console: true
   file: true
   file_path: "logs/optic-shield.log"
+
+# Hardware monitoring (Raspberry Pi specific)
+hardware_monitoring:
+  enabled: true
+  interval_seconds: 5
+  history_hours: 24
+  alert_thresholds:
+    cpu_temp_celsius: 75
+    gpu_temp_celsius: 70
+    cpu_throttling: true
+    undervoltage: true
+    low_voltage_v: 4.75
+    high_memory_percent: 85
+    high_swap_percent: 80
+    low_storage_mb: 1000
+    high_cpu_percent: 90
+
+# Crash handling and recovery
+crash_handling:
+  enabled: true
+  watchdog_enabled: true
+  watchdog_timeout_seconds: 30
+  crash_reports_enabled: true
+  crash_reports_upload: true
+  emergency_fallback_mode: true
+
+# Detection automation
+detection_automation:
+  enabled: true
+  
+  # Priority class mappings
+  # Critical: Immediate threat animals (bears, elephants, tigers, lions)
+  # High: Dangerous predators (leopards, wolves, wild boar)
+  # Medium: Large herbivores (deer, wild pigs, monkeys)
+  # Low: Small animals
+  priority_classes:
+    critical: [15, 16, 17, 18, 19, 83, 84, 85]  # Tigers, lions, bears, elephants
+    high: [20, 21, 22, 86, 87]  # Leopards, jaguars, wolves
+    medium: [88, 89, 90]  # Deer, monkeys, wild pigs
+    low: [91, 92]  # Small animals
+  
+  # Automated actions on detection
+  automated_actions:
+    capture_burst_photos: true
+    burst_count: 5
+    record_video: true
+    video_duration_seconds: 10
+    gps_tagging: true
+    sound_alert: false
+  
+  # Upload scheduling rules
+  upload_rules:
+    critical_immediate: true  # Upload critical detections immediately
+    high_delay_seconds: 60  # Upload high priority within 1 minute
+    medium_batch_minutes: 5  # Batch upload medium priority every 5 minutes
+    low_daily_summary: true  # Daily summary for low priority
+

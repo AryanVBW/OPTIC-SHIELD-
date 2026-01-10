@@ -20,10 +20,15 @@ from src.services.detection_service import DetectionService, ServiceState
 from src.services.alert_service import AlertService
 from src.services.upload_service import UploadService
 from src.services.event_logger import EventLogger
+from src.services.system_telemetry import SystemTelemetryService
+from src.services.watchdog_service import WatchdogService, ServiceHealthMonitor
+from src.services.automated_response import AutomatedResponseService
 from src.storage.offline_queue import OfflineQueue
 from src.api.dashboard_client import DashboardClient
 from src.utils.logging_setup import setup_logging
 from src.utils.system_monitor import SystemMonitor
+from src.utils.crash_handler import CrashHandler
+from src.utils.rpi_hardware import RaspberryPiHardware
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +38,7 @@ class OpticShield:
     Main application class for OPTIC-SHIELD.
     Orchestrates all services and handles lifecycle management.
     """
-    
+
     def __init__(self, config_dir: str = None):
         self.config_dir = Path(config_dir) if config_dir else None
         self.config: Config = None
@@ -44,44 +49,76 @@ class OpticShield:
         self.event_logger: EventLogger = None
         self.offline_queue: OfflineQueue = None
         self.system_monitor: SystemMonitor = None
+        self.telemetry_service: SystemTelemetryService = None
+        self.crash_handler: CrashHandler = None
+        self.watchdog_service: WatchdogService = None
+        self.health_monitor: ServiceHealthMonitor = None
+        self.automated_response: AutomatedResponseService = None
+        self.rpi_hardware: RaspberryPiHardware = None
         self._restart_count = 0
-    
+
     def initialize(self) -> bool:
         """Initialize all components."""
         try:
             self.config = Config.get_instance(self.config_dir)
-            
+
             setup_logging(self.config)
-            
+
             logger.info("=" * 60)
             logger.info("OPTIC-SHIELD Wildlife Detection System")
             logger.info(f"Environment: {self.config.environment}")
             logger.info(f"Device ID: {self.config.device.id}")
             logger.info(f"Device Name: {self.config.device.name}")
             logger.info("=" * 60)
-            
+
+            base_path = self.config.get_base_path()
+
+            # Initialize crash handler first
+            self.crash_handler = CrashHandler(
+                crash_dir=str(base_path / "data" / "crash_reports"),
+                device_id=self.config.device.id,
+                upload_callback=None,  # Will be set later
+            )
+            self.crash_handler.install()
+            logger.info("Crash handler installed")
+
+            # Initialize Raspberry Pi hardware monitoring
+            self.rpi_hardware = RaspberryPiHardware()
+            if self.rpi_hardware.is_raspberry_pi:
+                board_info = self.rpi_hardware.get_board_info()
+                logger.info(f"Raspberry Pi detected: {board_info['model']}")
+                logger.info(f"Memory: {board_info['memory_mb']} MB")
+
+            # Initialize system monitor
             self.system_monitor = SystemMonitor(
                 max_memory_mb=self.config.system.max_memory_mb,
                 max_cpu_percent=self.config.system.max_cpu_percent,
-                check_interval=30
+                check_interval=30,
             )
-            
+
+            # Initialize telemetry service
+            hw_monitoring_config = self.config.get("hardware_monitoring", {})
+            self.telemetry_service = SystemTelemetryService(
+                collection_interval=hw_monitoring_config.get("interval_seconds", 5),
+                history_hours=hw_monitoring_config.get("history_hours", 24),
+                alert_thresholds=hw_monitoring_config.get("alert_thresholds", {}),
+            )
+
             # Initialize event logger for audit trail
-            base_path = self.config.get_base_path()
             self.event_logger = EventLogger(
                 log_dir=str(base_path / "data" / "event_logs"),
                 device_id=self.config.device.id,
-                retention_days=self.config.storage.logs_retention_days
+                retention_days=self.config.storage.logs_retention_days,
             )
             self.event_logger.initialize()
-            
+
             # Initialize offline queue for reliable uploads
             self.offline_queue = OfflineQueue(
                 db_path=str(base_path / "data" / "offline_queue.db"),
-                max_queue_size=self.config.dashboard.offline_queue_max_size
+                max_queue_size=self.config.dashboard.offline_queue_max_size,
             )
             self.offline_queue.initialize()
-            
+
             if self.config.dashboard.api_url and self.config.dashboard.api_key:
                 device_secret = os.getenv("OPTIC_DEVICE_SECRET", "")
                 self.dashboard_client = DashboardClient(
@@ -91,15 +128,15 @@ class OpticShield:
                     device_secret=device_secret,
                     sync_interval=self.config.dashboard.sync_interval_seconds,
                     heartbeat_interval=self.config.dashboard.heartbeat_interval_seconds,
-                    offline_queue_max_size=self.config.dashboard.offline_queue_max_size
+                    offline_queue_max_size=self.config.dashboard.offline_queue_max_size,
                 )
-            
+
             self.detection_service = DetectionService(self.config)
-            
+
             if not self.detection_service.initialize():
                 logger.error("Detection service initialization failed")
                 return False
-            
+
             # Initialize upload service for detection-to-portal uploads
             device_secret = os.getenv("OPTIC_DEVICE_SECRET", "")
             self.upload_service = UploadService(
@@ -112,115 +149,193 @@ class OpticShield:
                 event_logger=self.event_logger,
                 upload_interval=30,
                 batch_size=5,
-                max_image_size_kb=self.config.alerts.remote.image_max_size_kb
+                max_image_size_kb=self.config.alerts.remote.image_max_size_kb,
             )
-            
+
             # Set device metadata for uploads
-            self.upload_service.set_device_info({
-                "name": self.config.device.name,
-                "environment": self.config.environment,
-                "version": "1.0.0",
-                "hardware_model": "Raspberry Pi 5"
-            })
-            self.upload_service.set_location({
-                "name": self.config.device.location_name,
-                "latitude": self.config.device.latitude,
-                "longitude": self.config.device.longitude
-            })
-            
+            self.upload_service.set_device_info(
+                {
+                    "name": self.config.device.name,
+                    "environment": self.config.environment,
+                    "version": "1.0.0",
+                    "hardware_model": "Raspberry Pi 5",
+                }
+            )
+            self.upload_service.set_location(
+                {
+                    "name": self.config.device.location_name,
+                    "latitude": self.config.device.latitude,
+                    "longitude": self.config.device.longitude,
+                }
+            )
+
+            # Initialize automated response service
+            automation_enabled = self.config.get("detection_automation", {}).get(
+                "enabled", True
+            )
+            if automation_enabled:
+                self.automated_response = AutomatedResponseService(
+                    config=self.config,
+                    image_store=self.detection_service.image_store,
+                    upload_service=self.upload_service,
+                    event_logger=self.event_logger,
+                )
+                logger.info("Automated response service initialized")
+
             self.alert_service = AlertService(
                 config=self.config,
                 dashboard_client=self.dashboard_client,
                 image_store=self.detection_service.image_store,
                 upload_service=self.upload_service,
-                event_logger=self.event_logger
+                event_logger=self.event_logger,
             )
             self.alert_service.initialize()
-            
+
+            # Connect detection callbacks
+            if self.automated_response:
+                self.detection_service.add_detection_callback(
+                    self.automated_response.handle_detection
+                )
+
             self.detection_service.add_detection_callback(
                 self.alert_service.handle_detection
             )
-            
+
+            # Initialize watchdog service
+            watchdog_config = self.config.get("crash_handling", {})
+            if watchdog_config.get("watchdog_enabled", True):
+                self.health_monitor = ServiceHealthMonitor()
+
+                # Register service health checks
+                self.health_monitor.register_service(
+                    "detection",
+                    lambda: self.detection_service
+                    and self.detection_service.state == ServiceState.RUNNING,
+                )
+
+                self.watchdog_service = WatchdogService(
+                    timeout_seconds=watchdog_config.get("watchdog_timeout_seconds", 30),
+                    heartbeat_interval=10,
+                    service_check_callback=self.health_monitor.check_all_services,
+                )
+                logger.info("Watchdog service configured")
+
+            # Set crash upload callback
+            if self.crash_handler and self.dashboard_client:
+                self.crash_handler.upload_callback = self.dashboard_client.report_crash
+
             logger.info("All components initialized successfully")
             return True
-            
+
         except Exception as e:
             logger.error(f"Initialization failed: {e}", exc_info=True)
+            if self.crash_handler:
+                self.crash_handler.handle_service_crash("initialization", e, {})
             return False
-    
+
     def start(self):
         """Start all services."""
         logger.info("Starting OPTIC-SHIELD services...")
-        
+
+        # Start system monitoring
         self.system_monitor.start()
-        
+
+        # Start telemetry service for hardware monitoring
+        if self.telemetry_service:
+            self.telemetry_service.start()
+            logger.info("Hardware telemetry service started")
+
         if self.dashboard_client:
             self.dashboard_client.set_system_monitor(self.system_monitor)
-            
+
             device_info = {
                 "name": self.config.device.name,
                 "location": {
                     "name": self.config.device.location_name,
                     "latitude": self.config.device.latitude,
-                    "longitude": self.config.device.longitude
+                    "longitude": self.config.device.longitude,
                 },
                 "environment": self.config.environment,
                 "version": "1.0.0",
                 "hardware_model": "Raspberry Pi 5",
-                "tags": ["wildlife", "detection", self.config.environment]
+                "tags": ["wildlife", "detection", self.config.environment],
             }
+
+            # Add RPI hardware info if available
+            if self.rpi_hardware and self.rpi_hardware.is_raspberry_pi:
+                board_info = self.rpi_hardware.get_board_info()
+                device_info["hardware_details"] = board_info
+
             self.dashboard_client.set_device_info(device_info)
-            
+
             cameras = self._get_camera_info()
             self.dashboard_client.set_cameras(cameras)
-            
+
             self.dashboard_client.start()
             self.dashboard_client.register_device(device_info)
-        
+
         # Start upload service for detection-to-portal uploads
         if self.upload_service:
             cameras = self._get_camera_info()
             self.upload_service.set_cameras(cameras)
             self.upload_service.start()
-        
+
         self.detection_service.start()
-        
+
+        # Start watchdog last (after all critical services are running)
+        if self.watchdog_service:
+            self.watchdog_service.start()
+            logger.info("Hardware watchdog started")
+
         logger.info("All services started")
-    
+
     def _get_camera_info(self) -> list:
         """Get camera information for telemetry."""
         cameras = []
         if self.config.camera.enabled:
-            cameras.append({
-                "id": f"cam-{self.config.device.id}-0",
-                "name": "Primary Camera",
-                "model": "Pi Camera Module 3" if not self.config.camera.fallback_usb else "USB Camera",
-                "resolution": f"{self.config.camera.width}x{self.config.camera.height}",
-                "status": "active"
-            })
+            cameras.append(
+                {
+                    "id": f"cam-{self.config.device.id}-0",
+                    "name": "Primary Camera",
+                    "model": (
+                        "Pi Camera Module 3"
+                        if not self.config.camera.fallback_usb
+                        else "USB Camera"
+                    ),
+                    "resolution": f"{self.config.camera.width}x{self.config.camera.height}",
+                    "status": "active",
+                }
+            )
         return cameras
-    
+
     def stop(self):
         """Stop all services gracefully."""
         logger.info("Stopping OPTIC-SHIELD services...")
-        
+
+        # Stop watchdog first to prevent system reset during shutdown
+        if self.watchdog_service:
+            self.watchdog_service.stop()
+
         if self.detection_service:
             self.detection_service.stop()
-        
+
         if self.alert_service:
             self.alert_service.cleanup()
-        
+
         if self.upload_service:
             self.upload_service.stop()
-        
+
         if self.dashboard_client:
             self.dashboard_client.stop()
-        
+
+        if self.telemetry_service:
+            self.telemetry_service.stop()
+
         if self.system_monitor:
             self.system_monitor.stop()
-        
+
         logger.info("All services stopped")
-    
+
     def run(self):
         """Run the application with auto-restart capability."""
         while True:
@@ -229,73 +344,97 @@ class OpticShield:
                     logger.error("Initialization failed, retrying in 10 seconds...")
                     time.sleep(10)
                     self._restart_count += 1
-                    
+
                     if self._restart_count >= self.config.system.max_restart_attempts:
                         logger.critical("Max restart attempts reached, exiting")
                         sys.exit(1)
                     continue
-                
+
                 self.start()
-                
+
                 while self.detection_service.state == ServiceState.RUNNING:
                     time.sleep(1)
-                    
+
                     stats = self.get_stats()
                     if stats.get("detection_service", {}).get("error_count", 0) > 100:
                         logger.warning("High error count, triggering restart")
                         break
-                
+
             except KeyboardInterrupt:
                 logger.info("Keyboard interrupt received")
                 break
             except Exception as e:
                 logger.error(f"Runtime error: {e}", exc_info=True)
                 self._restart_count += 1
-                
+
                 if not self.config.system.auto_restart:
                     break
-                
+
                 if self._restart_count >= self.config.system.max_restart_attempts:
                     logger.critical("Max restart attempts reached, exiting")
                     break
-                
-                logger.info(f"Restarting in {self.config.system.restart_delay_seconds} seconds...")
+
+                logger.info(
+                    f"Restarting in {self.config.system.restart_delay_seconds} seconds..."
+                )
                 time.sleep(self.config.system.restart_delay_seconds)
             finally:
                 self.stop()
-        
+
         logger.info("OPTIC-SHIELD shutdown complete")
-    
+
     def get_stats(self) -> dict:
         """Get comprehensive system statistics."""
         stats = {
             "device_id": self.config.device.id if self.config else None,
             "device_name": self.config.device.name if self.config else None,
             "environment": self.config.environment if self.config else None,
-            "restart_count": self._restart_count
+            "restart_count": self._restart_count,
         }
-        
+
         if self.detection_service:
             stats["detection_service"] = self.detection_service.get_stats()
-        
+
         if self.alert_service:
             stats["alert_service"] = self.alert_service.get_stats()
-        
+
         if self.upload_service:
             stats["upload_service"] = self.upload_service.get_stats()
-        
+
         if self.offline_queue:
             stats["offline_queue"] = self.offline_queue.get_stats()
-        
+
         if self.event_logger:
             stats["event_logger"] = self.event_logger.get_stats()
-        
+
         if self.dashboard_client:
             stats["dashboard_client"] = self.dashboard_client.get_stats()
-        
+
         if self.system_monitor:
             stats["system"] = self.system_monitor.get_stats_dict()
-        
+
+        # Hardware and telemetry stats
+        if self.telemetry_service:
+            stats["telemetry_service"] = self.telemetry_service.get_stats()
+
+        if self.rpi_hardware and self.rpi_hardware.is_raspberry_pi:
+            stats["hardware"] = self.rpi_hardware.get_all_metrics()
+
+        # Crash handler stats
+        if self.crash_handler:
+            stats["crash_handler"] = self.crash_handler.get_stats()
+
+        # Watchdog stats
+        if self.watchdog_service:
+            stats["watchdog"] = self.watchdog_service.get_stats()
+
+        if self.health_monitor:
+            stats["service_health"] = self.health_monitor.get_service_status()
+
+        # Automated response stats
+        if self.automated_response:
+            stats["automated_response"] = self.automated_response.get_stats()
+
         return stats
 
 
@@ -305,36 +444,29 @@ def parse_args():
         description="OPTIC-SHIELD Wildlife Detection System"
     )
     parser.add_argument(
-        "--config-dir",
-        type=str,
-        default=None,
-        help="Path to configuration directory"
+        "--config-dir", type=str, default=None, help="Path to configuration directory"
     )
     parser.add_argument(
         "--env",
         type=str,
         choices=["development", "production"],
         default=None,
-        help="Environment (overrides OPTIC_ENV)"
+        help="Environment (overrides OPTIC_ENV)",
     )
-    parser.add_argument(
-        "--debug",
-        action="store_true",
-        help="Enable debug logging"
-    )
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     return parser.parse_args()
 
 
 def main():
     """Main entry point."""
     args = parse_args()
-    
+
     if args.env:
         os.environ["OPTIC_ENV"] = args.env
-    
+
     if args.debug:
         os.environ["OPTIC_DEBUG"] = "1"
-    
+
     app = OpticShield(config_dir=args.config_dir)
     app.run()
 
