@@ -392,6 +392,10 @@ class Config:
         """Get logs directory path."""
         return self.get_base_path() / self.storage.logs_path
 
+    def get(self, key: str, default: Any = None) -> Any:
+        """Get a value from raw config dictionary."""
+        return self._raw_config.get(key, default)
+
     def get_platform_info(self) -> Dict[str, Any]:
         """Get platform detection information."""
         try:
