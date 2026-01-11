@@ -21,6 +21,7 @@ export function RecipientManager({ recipients, onRecipientChange }: RecipientMan
         email: '',
         preferredChannels: [] as ('whatsapp' | 'sms' | 'email')[],
         active: true,
+        autoAlert: false,
     })
     const [submitting, setSubmitting] = useState(false)
     const [error, setError] = useState<string | null>(null)
@@ -32,6 +33,7 @@ export function RecipientManager({ recipients, onRecipientChange }: RecipientMan
             email: '',
             preferredChannels: [],
             active: true,
+            autoAlert: false,
         })
         setEditingRecipient(null)
         setShowAddModal(true)
@@ -45,6 +47,7 @@ export function RecipientManager({ recipients, onRecipientChange }: RecipientMan
             email: recipient.email || '',
             preferredChannels: recipient.preferredChannels,
             active: recipient.active,
+            autoAlert: recipient.autoAlert,
         })
         setEditingRecipient(recipient)
         setShowAddModal(true)
@@ -171,6 +174,11 @@ export function RecipientManager({ recipients, onRecipientChange }: RecipientMan
                                         {channel}
                                     </Badge>
                                 ))}
+                                {recipient.autoAlert && (
+                                    <Badge variant="warning" size="sm">
+                                        🚨 Auto-Alert
+                                    </Badge>
+                                )}
                             </div>
                         </div>
                     ))
@@ -242,6 +250,22 @@ export function RecipientManager({ recipients, onRecipientChange }: RecipientMan
                                     ))}
                                 </div>
                             </div>
+
+                            <div className="flex items-center gap-3">
+                                <input
+                                    type="checkbox"
+                                    id="autoAlert"
+                                    checked={formData.autoAlert}
+                                    onChange={e => setFormData({ ...formData, autoAlert: e.target.checked })}
+                                    className="w-4 h-4"
+                                />
+                                <label htmlFor="autoAlert" className="text-sm font-medium cursor-pointer">
+                                    Auto-send alerts on detection 🚨
+                                </label>
+                            </div>
+                            <p className="text-xs text-slate-500 -mt-2 ml-7">
+                                Automatically send alerts when wildlife is detected
+                            </p>
 
                             <div className="flex items-center gap-3">
                                 <input

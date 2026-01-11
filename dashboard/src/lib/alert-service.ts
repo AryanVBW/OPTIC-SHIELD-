@@ -9,6 +9,7 @@ export interface AlertRecipient {
     email?: string
     preferredChannels: ('whatsapp' | 'sms' | 'email')[]
     active: boolean
+    autoAlert: boolean
     createdAt: string
 }
 
@@ -52,6 +53,7 @@ export class AlertService {
             email: 'demo@example.com',
             preferredChannels: ['email'],
             active: true,
+            autoAlert: false,
         })
     }
 
@@ -110,6 +112,42 @@ export class AlertService {
     }
 
     /**
+     * Get recipients with auto-alert enabled
+     */
+    getAutoAlertRecipients(): AlertRecipient[] {
+        return this.getAllRecipients().filter(r => r.active && r.autoAlert)
+    }
+
+    /**
+     * Send automatic alerts to all auto-alert enabled recipients
+     */
+    async sendAutoAlerts(
+        detection: Detection,
+        onProgress?: (progress: BulkAlertProgress) => void
+    ): Promise<{ messages: AlertMessage[]; summary: { total: number; sent: number; failed: number } }> {
+        const autoRecipients = this.getAutoAlertRecipients()
+
+        if (autoRecipients.length === 0) {
+            return {
+                messages: [],
+                summary: { total: 0, sent: 0, failed: 0 }
+            }
+        }
+
+        // Send to all auto-alert recipients using their preferred channels
+        return this.sendBulkAlerts(
+            {
+                detectionIds: [detection.id],
+                recipientIds: autoRecipients.map(r => r.id),
+                channels: ['whatsapp', 'sms', 'email'], // Send via all configured channels
+                customMessage: 'AUTOMATIC WILDLIFE ALERT - Immediate action may be required.'
+            },
+            [detection],
+            onProgress
+        )
+    }
+
+    /**
      * Send alert to a single recipient via specific channel
      */
     async sendAlert(
@@ -153,7 +191,7 @@ export class AlertService {
                     break
 
                 default:
-                    throw new Error(`Unknown channel: ${channel}`)
+                    throw new Error(`Unknown channel: ${channel} `)
             }
 
             if (result.success) {
@@ -307,7 +345,7 @@ export class AlertService {
      * Generate unique ID
      */
     private generateId(): string {
-        return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+        return `${Date.now()} -${Math.random().toString(36).substr(2, 9)} `
     }
 
     /**

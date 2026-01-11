@@ -172,6 +172,7 @@ export interface AlertRecipient {
   email?: string
   preferredChannels: ('whatsapp' | 'sms' | 'email')[]
   active: boolean
+  autoAlert: boolean  // Auto-send alerts on detection
   createdAt: string
 }
 
