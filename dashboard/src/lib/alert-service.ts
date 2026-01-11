@@ -1,6 +1,6 @@
 import { Detection } from '@/types'
 import { getTwilioService } from './twilio-service'
-import { getSendGridService } from './sendgrid-service'
+import { getResendService } from './resend-service'
 
 export interface AlertRecipient {
     id: string
@@ -42,7 +42,7 @@ export class AlertService {
     private recipients: Map<string, AlertRecipient> = new Map()
     private alertHistory: AlertMessage[] = []
     private twilioService = getTwilioService()
-    private sendGridService = getSendGridService()
+    private resendService = getResendService()
 
     constructor() {
         // Initialize with some demo recipients
@@ -149,7 +149,7 @@ export class AlertService {
                     if (!recipient.email) {
                         throw new Error('Recipient does not have an email address')
                     }
-                    result = await this.sendGridService.sendEmailAlert(recipient.email, detection, customMessage)
+                    result = await this.resendService.sendEmailAlert(recipient.email, detection, customMessage)
                     break
 
                 default:
@@ -299,7 +299,7 @@ export class AlertService {
         return {
             whatsapp: this.twilioService.isConfigured(),
             sms: this.twilioService.isConfigured(),
-            email: this.sendGridService.isConfigured(),
+            email: this.resendService.isConfigured(),
         }
     }
 
@@ -332,7 +332,7 @@ export class AlertService {
         }
 
         if (data.email) {
-            const emailValidation = this.sendGridService.validateEmail(data.email)
+            const emailValidation = this.resendService.validateEmail(data.email)
             if (!emailValidation.valid) {
                 errors.push(emailValidation.error || 'Invalid email address')
             }
