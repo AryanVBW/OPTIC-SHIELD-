@@ -27,7 +27,10 @@ A production-ready, deeply optimized wildlife detection system designed for depl
                     │  • Real-time device monitoring      │
                     │  • Detection history & analytics    │
                     │  • Multi-device management          │
-                    │  • Alert configuration              │
+                    │  • Bulk alert system (NEW) 🚨       │
+                    │    - WhatsApp notifications         │
+                    │    - SMS alerts                     │
+                    │    - Email alerts                   │
                     └─────────────────────────────────────┘
 ```
 
@@ -41,6 +44,18 @@ A production-ready, deeply optimized wildlife detection system designed for depl
 - **Low Resource Usage**: Optimized for RPi5's 4GB/8GB RAM
 - **Local Storage**: SQLite database + image storage with auto-cleanup
 - **Cellular Alerts**: Minimal bandwidth usage (JSON + compressed images)
+
+### Bulk Alert System 🆕
+- **Multi-Channel Notifications**: Send alerts via WhatsApp, SMS, and Email
+- **Recipient Management**: Add, edit, and manage alert recipients
+- **Bulk Sending**: Send alerts to multiple recipients simultaneously
+- **Rich Content**: Includes detection images, GPS location, Google Maps links
+- **Alert History**: Complete audit trail of all sent alerts
+- **Free Email Service**: 3,000 free emails/month via Resend
+- **Service Integrations**:
+  - WhatsApp & SMS via Twilio
+  - Email via Resend (completely free tier)
+- **Smart Formatting**: Beautiful HTML emails and rich WhatsApp messages
 
 ### Detection-to-Portal Upload System
 - **Automatic Photo Capture**: Captures image at moment of detection
@@ -57,6 +72,13 @@ A production-ready, deeply optimized wildlife detection system designed for depl
 - **Detection History**: Browse and filter past detections with images
 - **Image Viewer**: Click any detection to view captured image with metadata
 - **Analytics**: Detection trends, species distribution
+- **Bulk Alert System** 🆕:
+  - Send WhatsApp, SMS, and Email alerts
+  - Manage recipient list (add/edit/delete)
+  - Select detections and recipients for bulk sending
+  - Alert history and statistics
+  - Beautiful HTML email templates with detection images
+  - GPS location with Google Maps integration
 - **Secure API**: JWT authentication, HTTPS only
 
 ## Project Structure
@@ -141,14 +163,49 @@ sudo systemctl start optic-shield
 
 ### 4. Dashboard Deployment
 
-
 ```bash
 cd dashboard
 npm install
+
+# Configure environment variables (see .env.local.example)
+cp .env.local.example .env.local
+
+# Add your API credentials:
+# - TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN (for WhatsApp/SMS)
+# - RESEND_API_KEY (for Email - FREE 3,000 emails/month)
+# - API_SECRET_KEY (for device authentication)
+
 npm run dev     # Development
 # or
 vercel deploy   # Production
 ```
+
+#### Alert System Setup (Optional)
+
+To enable bulk alerts via WhatsApp, SMS, and Email:
+
+1. **Twilio** (WhatsApp & SMS):
+   - Sign up at https://www.twilio.com
+   - Get Account SID and Auth Token
+   - Get a phone number for SMS
+   - Enable WhatsApp sandbox
+
+2. **Resend** (Email - FREE):
+   - Sign up at https://resend.com
+   - Create an API key
+   - FREE tier: 3,000 emails/month
+
+3. **Configure** `.env.local`:
+   ```bash
+   TWILIO_ACCOUNT_SID=your_account_sid
+   TWILIO_AUTH_TOKEN=your_auth_token
+   TWILIO_WHATSAPP_NUMBER=whatsapp:+14155238886
+   TWILIO_SMS_NUMBER=+1234567890
+   RESEND_API_KEY=re_your_api_key
+   RESEND_FROM_EMAIL=alerts@yourdomain.com
+   ```
+
+4. **Access**: Navigate to `/alerts` in the dashboard to manage recipients and send alerts
 
 ## Configuration
 
